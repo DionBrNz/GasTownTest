@@ -34,6 +34,12 @@ export interface StageConfig {
    * otherwise undefined (environment-agnostic synth, e.g. in CI without AWS creds).
    */
   readonly env: Environment;
+  /**
+   * Reserved concurrency for each API Lambda, from `-c reservedConcurrency=N`.
+   * Unset means unreserved, which is the default because a reservation can fail
+   * in accounts with a low concurrency quota.
+   */
+  readonly reservedConcurrency?: number;
 }
 
 /** Reads and validates the `stage` context param and derives per-stage settings. */
@@ -57,6 +63,8 @@ export function resolveStageConfig(
     ...(region ? { region } : {}),
   };
 
+  const reservedConcurrency = parseReservedConcurrency(node.tryGetContext('reservedConcurrency'));
+
   return {
     appName: APP_NAME,
     stage,
@@ -64,7 +72,22 @@ export function resolveStageConfig(
     removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     autoDeleteObjects: !isProd,
     env,
+    ...(reservedConcurrency !== undefined ? { reservedConcurrency } : {}),
   };
+}
+
+/** Context values from `-c` arrive as strings, so accept a numeric string or number. */
+function parseReservedConcurrency(raw: unknown): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(
+      `Invalid reservedConcurrency context ${JSON.stringify(raw)}: expected a positive integer.`,
+    );
+  }
+  return value;
 }
 
 /** Stack name for a logical stack, e.g. `Todo-dev-Auth`. */
