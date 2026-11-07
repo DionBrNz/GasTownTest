@@ -11,10 +11,19 @@ export type WebHostingStackProps = TodoStackProps;
  * STUB: resources land in bead to-oti.5.
  */
 export class WebHostingStack extends TodoStack {
+  /**
+   * Site origin, `https://<distribution domain>` with no trailing slash. Feeds the
+   * Cognito callback/logout URLs and the API CORS origin.
+   */
+  readonly siteUrl: string;
+
   constructor(scope: Construct, props: WebHostingStackProps) {
     super(scope, 'WebHosting', {
       description: 'Todo app: private S3 site bucket + CloudFront (OAC)',
       ...props,
     });
+
+    // STUB: to-oti.5 replaces this with `https://${distribution.distributionDomainName}`.
+    this.siteUrl = 'https://example.invalid';
   }
 }
