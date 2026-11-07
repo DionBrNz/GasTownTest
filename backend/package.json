@@ -16,9 +16,15 @@
     "@eslint/js": "10.0.1",
     "@types/aws-lambda": "8.10.164",
     "@types/node": "22.20.5",
+    "aws-sdk-client-mock": "4.1.0",
     "eslint": "10.14.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "2.36.0",
+    "@aws-lambda-powertools/tracer": "2.36.0",
+    "zod": "4.6.7"
   }
 }
