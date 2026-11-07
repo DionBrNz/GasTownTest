@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+*.tsbuildinfo
+coverage/
+dist/
+
+# CDK
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
