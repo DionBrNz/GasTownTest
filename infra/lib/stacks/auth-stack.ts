@@ -2,6 +2,7 @@ import { CfnOutput, Duration, Validations } from 'aws-cdk-lib';
 import {
   AccountRecovery,
   CfnManagedLoginBranding,
+  FeaturePlan,
   ManagedLoginVersion,
   Mfa,
   OAuthScope,
@@ -51,6 +52,8 @@ export class AuthStack extends TodoStack {
 
     this.userPool = new UserPool(this, 'UserPool', {
       userPoolName: `${config.appName}-${config.stage}`,
+      // Essentials is the lowest plan that supports managed login (v2).
+      featurePlan: FeaturePlan.ESSENTIALS,
       signInAliases: { email: true },
       signInCaseSensitive: false,
       selfSignUpEnabled: true,
@@ -81,11 +84,11 @@ export class AuthStack extends TodoStack {
           'but a self-sign-up todo app does not force it.',
       },
       {
-        id: 'AwsSolutions-COG3',
+        id: 'AwsSolutions-COG8',
         reason:
-          'Threat protection (advanced security) needs the paid Plus feature plan, which is ' +
-          'out of scope for this app. Brute force is limited by Cognito lockout, the strong ' +
-          'password policy and preventUserExistenceErrors on the client.',
+          'Threat protection needs the paid Plus feature plan, which is out of scope for ' +
+          'this app. Brute force is limited by Cognito lockout, the strong password policy ' +
+          'and preventUserExistenceErrors on the client.',
       },
     );
 
@@ -107,14 +110,20 @@ export class AuthStack extends TodoStack {
     });
     this.apiScope = `${RESOURCE_SERVER_ID}/${API_SCOPE_NAME}`;
 
-    const appUrls = [webHosting.siteUrl, ...(config.stage === 'dev' ? [LOCAL_DEV_URL] : [])];
+    // The SPA redirects back to its own root after sign-in and sign-out.
+    const appUrls = [
+      `${webHosting.siteUrl}/`,
+      ...(config.stage === 'dev' ? [`${LOCAL_DEV_URL}/`] : []),
+    ];
 
     // Public SPA client: no secret, authorization code grant only (the SPA uses PKCE),
     // and no direct username/password auth flows. Sign-in happens only on managed login.
     this.userPoolClient = this.userPool.addClient('WebClient', {
       userPoolClientName: `${config.appName}-${config.stage}-web`,
       generateSecret: false,
-      authFlows: {},
+      // A non-empty object makes CDK emit ExplicitAuthFlows = [ALLOW_REFRESH_TOKEN_AUTH]
+      // only; an empty one would fall back to Cognito's defaults (SRP + custom auth).
+      authFlows: { userSrp: false },
       supportedIdentityProviders: [UserPoolClientIdentityProvider.COGNITO],
       oAuth: {
         flows: { authorizationCodeGrant: true, implicitCodeGrant: false, clientCredentials: false },

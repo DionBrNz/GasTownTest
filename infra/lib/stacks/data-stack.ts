@@ -1,10 +1,5 @@
 import { CfnOutput } from 'aws-cdk-lib';
-import {
-  AttributeType,
-  Billing,
-  TableEncryptionV2,
-  TableV2,
-} from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, Billing, TableEncryptionV2, TableV2 } from 'aws-cdk-lib/aws-dynamodb';
 import type { Construct } from 'constructs';
 import { TodoStack } from './todo-stack';
 import type { TodoStackProps } from './todo-stack';
