@@ -1,0 +1,7 @@
+{
+  "name": "@todo/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Placeholder workspace. The React 19 + Vite app lands in bead to-oti.4.",
+  "license": "UNLICENSED"
+}

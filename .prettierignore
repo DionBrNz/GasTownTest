@@ -1,0 +1,11 @@
+# Generated / vendored
+package-lock.json
+cdk.out/
+dist/
+coverage/
+
+# Gas Town workspace files (not part of the repo)
+.beads/
+.claude/
+.runtime/
+CLAUDE.md
