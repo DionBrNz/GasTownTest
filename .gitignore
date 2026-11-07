@@ -23,3 +23,14 @@ cdk.context.json
 
 # Frontend local dev config (served by `vite` only, never built)
 frontend/dev/
+
+# Gas Town runtime (per-worktree agent state, not part of the repo)
+.runtime/
+.claude/
+.opencode/
+.logs/
+__pycache__/
+state.json
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
