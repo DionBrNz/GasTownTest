@@ -20,3 +20,6 @@ cdk.context.json
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Frontend local dev config (served by `vite` only, never built)
+frontend/dev/
