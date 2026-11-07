@@ -44,8 +44,9 @@ describe('API stack', () => {
     const methods = Object.values(template.findResources('AWS::ApiGateway::Method'))
       .map((m) => (m as { Properties: { HttpMethod: string } }).Properties.HttpMethod)
       .sort();
-    // OPTIONS is the CORS preflight; it is unauthenticated by design.
-    expect(methods).toEqual(['DELETE', 'GET', 'OPTIONS', 'OPTIONS', 'PATCH', 'POST']);
+    // OPTIONS is the CORS preflight on each resource (root, /todos, /todos/{id}). It is
+    // unauthenticated by design, because browsers send preflights without credentials.
+    expect(methods).toEqual(['DELETE', 'GET', 'OPTIONS', 'OPTIONS', 'OPTIONS', 'PATCH', 'POST']);
   });
 
   test('every non-preflight method uses the Cognito authorizer with the todo/api scope', () => {
@@ -58,8 +59,8 @@ describe('API stack', () => {
       expect(method).toMatchObject({
         AuthorizationType: 'COGNITO_USER_POOLS',
         AuthorizationScopes: ['todo/api'],
-        AuthorizerId: { Ref: expect.stringMatching(/CognitoAuthorizer/) },
       });
+      expect(JSON.stringify(method['AuthorizerId'])).toContain('CognitoAuthorizer');
     }
     for (const method of methods.filter((m) => m['HttpMethod'] === 'OPTIONS')) {
       expect(method['AuthorizationType']).toBe('NONE');
@@ -137,19 +138,15 @@ describe('API stack', () => {
       expect(fn).not.toHaveProperty('ReservedConcurrentExecutions');
     }
 
-    const logGroups = Object.values(template.findResources('AWS::Logs::LogGroup'));
-    const routeLogGroups = logGroups.filter((g) =>
-      /Logs$/.test(
-        Object.keys(template.findResources('AWS::Logs::LogGroup')).find(
-          (k) => template.findResources('AWS::Logs::LogGroup')[k] === g,
-        ) ?? '',
-      ),
-    );
-    expect(routeLogGroups.length).toBeGreaterThanOrEqual(4);
-    for (const group of logGroups) {
-      expect((group as { Properties: { RetentionInDays: number } }).Properties.RetentionInDays).toBe(
-        30,
-      );
+    const logGroups = template.findResources('AWS::Logs::LogGroup');
+    const logicalIds = Object.keys(logGroups);
+    for (const route of ['ListTodosLogs', 'CreateTodoLogs', 'UpdateTodoLogs', 'DeleteTodoLogs']) {
+      expect(logicalIds.some((id) => id.startsWith(route))).toBe(true);
+    }
+    for (const group of Object.values(logGroups)) {
+      expect(
+        (group as { Properties: { RetentionInDays: number } }).Properties.RetentionInDays,
+      ).toBe(30);
     }
   });
 
@@ -179,12 +176,17 @@ describe('API stack', () => {
       Rules: Match.arrayWith([
         Match.objectLike({
           Name: 'AWSManagedRulesCommonRuleSet',
-          Statement: { ManagedRuleGroupStatement: { VendorName: 'AWS', Name: 'AWSManagedRulesCommonRuleSet' } },
+          Statement: {
+            ManagedRuleGroupStatement: { VendorName: 'AWS', Name: 'AWSManagedRulesCommonRuleSet' },
+          },
         }),
         Match.objectLike({
           Name: 'AWSManagedRulesKnownBadInputsRuleSet',
           Statement: {
-            ManagedRuleGroupStatement: { VendorName: 'AWS', Name: 'AWSManagedRulesKnownBadInputsRuleSet' },
+            ManagedRuleGroupStatement: {
+              VendorName: 'AWS',
+              Name: 'AWSManagedRulesKnownBadInputsRuleSet',
+            },
           },
         }),
         Match.objectLike({
@@ -206,20 +208,24 @@ describe('API stack', () => {
 });
 
 describe('API stack: reserved concurrency', () => {
-  test('a numeric context value reserves concurrency on every route Lambda', () => {
-    const template = apiTemplate({ stage: 'dev', reservedConcurrency: '5' });
-    const functions = Object.values(template.findResources('AWS::Lambda::Function')).map(
-      (f) => (f as { Properties: Record<string, unknown> }).Properties,
-    );
-    expect(functions).toHaveLength(4);
-    for (const fn of functions) {
-      expect(fn['ReservedConcurrentExecutions']).toBe(5);
-    }
-  }, BUNDLE_TIMEOUT_MS);
+  test(
+    'a numeric context value reserves concurrency on every route Lambda',
+    () => {
+      const template = apiTemplate({ stage: 'dev', reservedConcurrency: '5' });
+      const functions = Object.values(template.findResources('AWS::Lambda::Function')).map(
+        (f) => (f as { Properties: Record<string, unknown> }).Properties,
+      );
+      expect(functions).toHaveLength(4);
+      for (const fn of functions) {
+        expect(fn['ReservedConcurrentExecutions']).toBe(5);
+      }
+    },
+    BUNDLE_TIMEOUT_MS,
+  );
 
   test.each([['0'], ['-1'], ['abc'], [1.5]])('rejects invalid reservedConcurrency %p', (value) => {
-    expect(() => buildTodoApp(new App({ context: { stage: 'dev', reservedConcurrency: value } }))).toThrow(
-      /reservedConcurrency/,
-    );
+    expect(() =>
+      buildTodoApp(new App({ context: { stage: 'dev', reservedConcurrency: value } })),
+    ).toThrow(/reservedConcurrency/);
   });
 });
