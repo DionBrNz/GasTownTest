@@ -50,7 +50,7 @@ const ROUTES = {
   delete: { construct: 'DeleteTodo', actions: ['dynamodb:DeleteItem'] },
 } as const;
 
-/** Stage throttling, sized for a single-user todo app. */
+/** Stage-level throttling (requests per second and burst), per the bead spec. */
 const THROTTLE_RATE_LIMIT = 20;
 const THROTTLE_BURST_LIMIT = 40;
 
