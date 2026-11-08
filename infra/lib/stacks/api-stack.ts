@@ -10,7 +10,6 @@ import {
   LambdaIntegration,
   LogGroupLogDestination,
   MethodLoggingLevel,
-  ResponseType,
   RestApi,
 } from 'aws-cdk-lib/aws-apigateway';
 import type { MethodOptions } from 'aws-cdk-lib/aws-apigateway';
@@ -27,11 +26,8 @@ import { TodoStack } from './todo-stack';
 import type { TodoStackProps } from './todo-stack';
 import type { AuthStack } from './auth-stack';
 import type { DataStack } from './data-stack';
-import type { WebHostingStack } from './web-hosting-stack';
 
 export interface ApiStackProps extends TodoStackProps {
-  /** Source of the CloudFront domain used as the only allowed CORS origin. */
-  readonly webHosting: WebHostingStack;
   /** Source of the Cognito user pool for the REST API authorizer. */
   readonly auth: AuthStack;
   /** Source of the DynamoDB table the per-route Lambdas read/write. */
@@ -54,11 +50,8 @@ const ROUTES = {
 const THROTTLE_RATE_LIMIT = 20;
 const THROTTLE_BURST_LIMIT = 40;
 
-/** WAF: requests per source IP in a 5-minute window before blocking. */
+/** WAF: requests per client IP in a 5-minute window before blocking. */
 const WAF_RATE_LIMIT = 2000;
-
-const ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'];
-const ALLOWED_HEADERS = ['Authorization', 'Content-Type'];
 
 const DUE_DATE_PATTERN = '^\\d{4}-\\d{2}-\\d{2}$';
 const PRIORITY_VALUES = ['low', 'medium', 'high'];
@@ -70,21 +63,17 @@ const PRIORITY_VALUES = ['low', 'medium', 'high'];
 export class ApiStack extends TodoStack {
   readonly restApi: RestApi;
   private readonly dataTable: TableV2;
-  private readonly allowedOrigin: string;
   /** Base URL of the API stage, e.g. `https://<id>.execute-api.<region>.amazonaws.com/dev/`. */
   readonly apiUrl: string;
 
   constructor(scope: Construct, props: ApiStackProps) {
-    const { webHosting, auth, data, ...rest } = props;
+    const { auth, data, ...rest } = props;
     super(scope, 'Api', { description: 'Todo app: REST API + Lambdas + WAF', ...rest });
-    this.addStackDependency(webHosting);
     this.addStackDependency(auth);
     this.addStackDependency(data);
 
     const { config } = this;
-    const allowedOrigin = webHosting.siteUrl;
     this.dataTable = data.table;
-    this.allowedOrigin = allowedOrigin;
 
     const accessLogs = new LogGroup(this, 'ApiAccessLogs', {
       retention: RetentionDays.ONE_MONTH,
@@ -108,29 +97,7 @@ export class ApiStack extends TodoStack {
         accessLogDestination: new LogGroupLogDestination(accessLogs),
         accessLogFormat: AccessLogFormat.jsonWithStandardFields(),
       },
-      // Browsers send preflight without credentials, so OPTIONS stays unauthenticated.
-      // It returns only the CORS headers for the CloudFront origin.
-      defaultCorsPreflightOptions: {
-        allowOrigins: [allowedOrigin],
-        allowMethods: ALLOWED_METHODS,
-        allowHeaders: ALLOWED_HEADERS,
-      },
-    });
-
-    // Gateway-generated 4XX/5XX (authorizer, validator, throttling) must still carry CORS
-    // headers, or the browser hides the real status from the SPA.
-    const corsGatewayHeaders = {
-      'Access-Control-Allow-Origin': `'${allowedOrigin}'`,
-      'Access-Control-Allow-Headers': `'${ALLOWED_HEADERS.join(',')}'`,
-      'Access-Control-Allow-Methods': `'${ALLOWED_METHODS.join(',')}'`,
-    };
-    this.restApi.addGatewayResponse('Gateway4xx', {
-      type: ResponseType.DEFAULT_4XX,
-      responseHeaders: corsGatewayHeaders,
-    });
-    this.restApi.addGatewayResponse('Gateway5xx', {
-      type: ResponseType.DEFAULT_5XX,
-      responseHeaders: corsGatewayHeaders,
+      // No CORS: the SPA calls this API through CloudFront on the same origin (`/todos*`).
     });
 
     // The API Gateway account role is the AWS-managed service role for stage execution logs.
@@ -236,7 +203,7 @@ export class ApiStack extends TodoStack {
 
   /**
    * One NodejsFunction per route: its own role (one DynamoDB action, one table ARN),
-   * a 30-day log group, X-Ray tracing and no secrets in the environment.
+   * a 30-day log group, X-Ray tracing and only the table name in the environment.
    */
   private todoFunction(route: keyof typeof ROUTES): LambdaFunction {
     const { config } = this;
@@ -276,7 +243,6 @@ export class ApiStack extends TodoStack {
         : {}),
       environment: {
         TABLE_NAME: table.tableName,
-        ALLOWED_ORIGIN: this.allowedOrigin,
       },
       bundling: {
         minify: true,
@@ -333,8 +299,16 @@ export class ApiStack extends TodoStack {
           name: 'IpRateLimit',
           priority: 2,
           action: { block: {} },
+          // Behind CloudFront every request arrives from an edge address, so an IP key would
+          // count all viewers together. The rule keys on the X-Forwarded-For client address,
+          // which CloudFront sets. That header is client-controlled as well, so this limit
+          // is a guard, not a hard per-client quota.
           statement: {
-            rateBasedStatement: { limit: WAF_RATE_LIMIT, aggregateKeyType: 'IP' },
+            rateBasedStatement: {
+              limit: WAF_RATE_LIMIT,
+              aggregateKeyType: 'FORWARDED_IP',
+              forwardedIpConfig: { headerName: 'X-Forwarded-For', fallbackBehavior: 'MATCH' },
+            },
           },
           visibilityConfig: visibility('IpRateLimit'),
         },

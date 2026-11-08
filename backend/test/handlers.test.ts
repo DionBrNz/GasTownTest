@@ -7,16 +7,7 @@ import { handler as listHandler } from '../src/handlers/list.js';
 import { handler as updateHandler } from '../src/handlers/update.js';
 import { docClient } from '../src/lib/dynamo.js';
 import { encodeNextToken } from '../src/lib/pagination.js';
-import {
-  ALLOWED_ORIGIN,
-  context,
-  makeEvent,
-  setEnv,
-  TABLE_NAME,
-  TODO_ID,
-  USER_A,
-  USER_B,
-} from './helpers.js';
+import { context, makeEvent, setEnv, TABLE_NAME, TODO_ID, USER_A, USER_B } from './helpers.js';
 
 setEnv();
 
@@ -48,17 +39,17 @@ beforeEach(() => {
   ddbMock.reset();
 });
 
-describe('authorization and CORS', () => {
+describe('authorization', () => {
   test('missing claims returns 401 and does not touch DynamoDB', async () => {
     const res = await listHandler(makeEvent({ claims: false }), context);
     expect(res.statusCode).toBe(401);
     expect(ddbMock.calls()).toHaveLength(0);
   });
 
-  test('every response carries the single allowed origin', async () => {
+  test('responses carry no CORS headers: the SPA is same-origin via CloudFront', async () => {
     ddbMock.on(QueryCommand).resolves({ Items: [] });
     const res = await listHandler(makeEvent(), context);
-    expect(res.headers?.['Access-Control-Allow-Origin']).toBe(ALLOWED_ORIGIN);
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Origin');
   });
 });
 

@@ -1,6 +1,5 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import type { z } from 'zod';
-import { env } from './env.js';
 
 /** Largest accepted request body, in bytes. */
 export const MAX_BODY_BYTES = 10 * 1024;
@@ -16,20 +15,16 @@ export class HttpError extends Error {
   }
 }
 
-function corsHeaders(): Record<string, string> {
-  return { 'Access-Control-Allow-Origin': env.allowedOrigin() };
-}
-
 export function json(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   };
 }
 
 export function noContent(): APIGatewayProxyResult {
-  return { statusCode: 204, headers: corsHeaders(), body: '' };
+  return { statusCode: 204, body: '' };
 }
 
 export function errorResponse(statusCode: number, message: string): APIGatewayProxyResult {

@@ -90,6 +90,15 @@ function parseReservedConcurrency(raw: unknown): number | undefined {
   return value;
 }
 
+/**
+ * Cognito managed-login domain prefix. Prefixes are global per region, so the account is
+ * included. Derived here (not read from the Auth stack) so WebHosting can build the CSP
+ * without depending on Auth, which already depends on WebHosting.
+ */
+export function cognitoDomainPrefix(config: StageConfig, account: string): string {
+  return `${config.appName}-${config.stage}-${account}`;
+}
+
 /** Stack name for a logical stack, e.g. `Todo-dev-Auth`. */
 export function stackName(config: StageConfig, logicalName: string): string {
   const app = config.appName.charAt(0).toUpperCase() + config.appName.slice(1);

@@ -20,17 +20,17 @@ export interface TodoApp {
 
 /**
  * Wires all stacks onto `app` in dependency order:
- * WebHosting -> Auth -> (Data) -> Api -> WebDeployment.
+ * Auth -> Data -> Api -> WebHosting -> WebDeployment.
  * Applies app-wide tags and cdk-nag AwsSolutions checks.
  */
 export function buildTodoApp(app: App): TodoApp {
   const config = resolveStageConfig(app.node);
 
-  const webHosting = new WebHostingStack(app, { config });
-  const auth = new AuthStack(app, { config, webHosting });
+  const auth = new AuthStack(app, { config });
   const data = new DataStack(app, { config });
-  const api = new ApiStack(app, { config, webHosting, auth, data });
-  const webDeployment = new WebDeploymentStack(app, { config, webHosting, auth, api });
+  const api = new ApiStack(app, { config, auth, data });
+  const webHosting = new WebHostingStack(app, { config, api });
+  const webDeployment = new WebDeploymentStack(app, { config, webHosting, auth });
 
   Tags.of(app).add('app', config.appName);
   Tags.of(app).add('env', config.stage);
