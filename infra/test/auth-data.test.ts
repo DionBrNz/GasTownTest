@@ -8,6 +8,8 @@ function templates(stage: string) {
     todo,
     auth: Template.fromStack(todo.auth),
     data: Template.fromStack(todo.data),
+    // The app client lives in WebDeployment, next to the site it redirects to.
+    web: Template.fromStack(todo.webDeployment),
   };
 }
 
@@ -51,14 +53,14 @@ describe('Auth stack', () => {
   });
 
   test('managed login v2 domain with a branding style for the web client', () => {
-    const { auth } = templates('dev');
+    const { auth, web } = templates('dev');
     auth.hasResourceProperties('AWS::Cognito::UserPoolDomain', {
       ManagedLoginVersion: 2,
       Domain: { 'Fn::Join': ['', ['todo-dev-', { Ref: 'AWS::AccountId' }]] },
     });
-    auth.hasResourceProperties('AWS::Cognito::ManagedLoginBranding', {
+    web.hasResourceProperties('AWS::Cognito::ManagedLoginBranding', {
       UseCognitoProvidedValues: true,
-      ClientId: { Ref: Match.stringLikeRegexp('^UserPoolWebClient') },
+      ClientId: { Ref: Match.stringLikeRegexp('^WebClient') },
     });
   });
 
@@ -72,17 +74,13 @@ describe('Auth stack', () => {
   });
 
   test('public client: no secret, code grant only, refresh-only explicit flows', () => {
-    const { auth } = templates('dev');
-    auth.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
-    auth.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+    const { web } = templates('dev');
+    web.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+    web.hasResourceProperties('AWS::Cognito::UserPoolClient', {
       GenerateSecret: false,
       AllowedOAuthFlowsUserPoolClient: true,
       AllowedOAuthFlows: ['code'],
-      AllowedOAuthScopes: [
-        'openid',
-        'email',
-        { 'Fn::Join': ['', [{ Ref: Match.anyValue() }, '/api']] },
-      ],
+      AllowedOAuthScopes: ['openid', 'email', { 'Fn::Join': ['', [Match.anyValue(), '/api']] }],
       ExplicitAuthFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
       SupportedIdentityProviders: ['COGNITO'],
       PreventUserExistenceErrors: 'ENABLED',
@@ -94,29 +92,33 @@ describe('Auth stack', () => {
     });
   });
 
+  // The site is the CloudFront domain, imported from WebHosting, so it is matched as a join.
+  const siteUrl = Match.objectLike({ 'Fn::Join': Match.anyValue() });
+
   test('dev allows the CloudFront site plus localhost:5173 as redirect targets', () => {
-    const { todo, auth } = templates('dev');
-    const urls = [`${todo.webHosting.siteUrl}/`, 'http://localhost:5173/'];
-    auth.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+    const { web } = templates('dev');
+    const urls = [siteUrl, 'http://localhost:5173/'];
+    web.hasResourceProperties('AWS::Cognito::UserPoolClient', {
       CallbackURLs: urls,
       LogoutURLs: urls,
     });
   });
 
   test('non-dev stages allow only the CloudFront site', () => {
-    const { todo, auth } = templates('prod');
-    const urls = [`${todo.webHosting.siteUrl}/`];
-    auth.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+    const { web } = templates('prod');
+    const urls = [siteUrl];
+    web.hasResourceProperties('AWS::Cognito::UserPoolClient', {
       CallbackURLs: urls,
       LogoutURLs: urls,
     });
   });
 
-  test('exports user pool id, client id, cognito domain and issuer', () => {
-    const { auth } = templates('dev');
-    for (const name of ['UserPoolId', 'UserPoolClientId', 'CognitoDomain', 'Issuer']) {
+  test('exports user pool id, cognito domain and issuer', () => {
+    const { auth, web } = templates('dev');
+    for (const name of ['UserPoolId', 'CognitoDomain', 'Issuer']) {
       auth.hasOutput(name, {});
     }
+    web.hasOutput('UserPoolClientId', {});
     auth.hasOutput('CognitoDomain', {
       Value: {
         'Fn::Join': [

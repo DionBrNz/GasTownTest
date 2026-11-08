@@ -1,21 +1,19 @@
 import { CfnOutput, Duration, Validations } from 'aws-cdk-lib';
 import {
   AccountRecovery,
-  CfnManagedLoginBranding,
   FeaturePlan,
   ManagedLoginVersion,
   Mfa,
-  OAuthScope,
   ResourceServerScope,
   UserPool,
-  UserPoolClientIdentityProvider,
+  UserPoolResourceServer,
   VerificationEmailStyle,
 } from 'aws-cdk-lib/aws-cognito';
-import type { UserPoolClient, UserPoolDomain } from 'aws-cdk-lib/aws-cognito';
+import type { UserPoolDomain } from 'aws-cdk-lib/aws-cognito';
 import type { Construct } from 'constructs';
 import { TodoStack } from './todo-stack';
 import type { TodoStackProps } from './todo-stack';
-import type { WebHostingStack } from './web-hosting-stack';
+import { cognitoDomainPrefix } from '../config';
 
 /** Vite dev server origin. Allowed as an OAuth redirect only in the `dev` stage. */
 export const LOCAL_DEV_URL = 'http://localhost:5173';
@@ -24,18 +22,15 @@ export const LOCAL_DEV_URL = 'http://localhost:5173';
 export const RESOURCE_SERVER_ID = 'todo';
 export const API_SCOPE_NAME = 'api';
 
-export interface AuthStackProps extends TodoStackProps {
-  /** Source of the CloudFront site URL used for OAuth callback/logout URLs. */
-  readonly webHosting: WebHostingStack;
-}
-
 /**
- * Cognito user pool, managed login domain and public PKCE app client.
+ * Cognito user pool, managed login domain and resource server (the `todo/api` scope).
+ * The app client lives in WebDeployment: its callback URLs are the CloudFront site.
  */
 export class AuthStack extends TodoStack {
   readonly userPool: UserPool;
-  readonly userPoolClient: UserPoolClient;
   readonly userPoolDomain: UserPoolDomain;
+  readonly resourceServer: UserPoolResourceServer;
+  readonly apiScopeDefinition: ResourceServerScope;
   /** Full scope string the API requires on access tokens: `todo/api`. */
   readonly apiScope: string;
   /** Managed login hostname, e.g. `todo-dev-123456789012.auth.<region>.amazoncognito.com`. */
@@ -43,10 +38,8 @@ export class AuthStack extends TodoStack {
   /** OIDC issuer: `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`. */
   readonly issuer: string;
 
-  constructor(scope: Construct, props: AuthStackProps) {
-    const { webHosting, ...rest } = props;
-    super(scope, 'Auth', { description: 'Todo app: Cognito user pool + PKCE client', ...rest });
-    this.addStackDependency(webHosting);
+  constructor(scope: Construct, props: TodoStackProps) {
+    super(scope, 'Auth', { description: 'Todo app: Cognito user pool + managed login', ...props });
 
     const { config } = this;
 
@@ -95,65 +88,25 @@ export class AuthStack extends TodoStack {
     // Managed login (v2) on a Cognito-hosted prefix domain. Prefixes are global per
     // region, so include the account to keep them unique.
     this.userPoolDomain = this.userPool.addDomain('Domain', {
-      cognitoDomain: { domainPrefix: `${config.appName}-${config.stage}-${this.account}` },
+      cognitoDomain: { domainPrefix: cognitoDomainPrefix(config, this.account) },
       managedLoginVersion: ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
 
-    const apiScope = new ResourceServerScope({
+    this.apiScopeDefinition = new ResourceServerScope({
       scopeName: API_SCOPE_NAME,
       scopeDescription: 'Read and write your own todos',
     });
-    const resourceServer = this.userPool.addResourceServer('ApiResourceServer', {
+    this.resourceServer = this.userPool.addResourceServer('ApiResourceServer', {
       identifier: RESOURCE_SERVER_ID,
       userPoolResourceServerName: `${config.appName}-${config.stage}-api`,
-      scopes: [apiScope],
+      scopes: [this.apiScopeDefinition],
     });
     this.apiScope = `${RESOURCE_SERVER_ID}/${API_SCOPE_NAME}`;
-
-    // The SPA redirects back to its own root after sign-in and sign-out.
-    const appUrls = [
-      `${webHosting.siteUrl}/`,
-      ...(config.stage === 'dev' ? [`${LOCAL_DEV_URL}/`] : []),
-    ];
-
-    // Public SPA client: no secret, authorization code grant only (the SPA uses PKCE),
-    // and no direct username/password auth flows. Sign-in happens only on managed login.
-    this.userPoolClient = this.userPool.addClient('WebClient', {
-      userPoolClientName: `${config.appName}-${config.stage}-web`,
-      generateSecret: false,
-      // A non-empty object makes CDK emit ExplicitAuthFlows = [ALLOW_REFRESH_TOKEN_AUTH]
-      // only; an empty one would fall back to Cognito's defaults (SRP + custom auth).
-      authFlows: { userSrp: false },
-      supportedIdentityProviders: [UserPoolClientIdentityProvider.COGNITO],
-      oAuth: {
-        flows: { authorizationCodeGrant: true, implicitCodeGrant: false, clientCredentials: false },
-        scopes: [
-          OAuthScope.OPENID,
-          OAuthScope.EMAIL,
-          OAuthScope.resourceServer(resourceServer, apiScope),
-        ],
-        callbackUrls: appUrls,
-        logoutUrls: appUrls,
-      },
-      preventUserExistenceErrors: true,
-      enableTokenRevocation: true,
-      accessTokenValidity: Duration.minutes(60),
-      idTokenValidity: Duration.minutes(60),
-      refreshTokenValidity: Duration.days(1),
-    });
-
-    // Managed login v2 serves an error page for clients without a branding style.
-    new CfnManagedLoginBranding(this, 'WebClientBranding', {
-      userPoolId: this.userPool.userPoolId,
-      clientId: this.userPoolClient.userPoolClientId,
-      useCognitoProvidedValues: true,
-    });
 
     this.cognitoDomain = `${this.userPoolDomain.domainName}.auth.${this.region}.amazoncognito.com`;
     this.issuer = this.userPool.userPoolProviderUrl;
 
     new CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId });
-    new CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });
     new CfnOutput(this, 'CognitoDomain', { value: this.cognitoDomain });
     new CfnOutput(this, 'Issuer', { value: this.issuer });
   }

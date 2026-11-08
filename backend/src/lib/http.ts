@@ -1,6 +1,5 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import type { z } from 'zod';
-import { env } from './env.js';
 
 /** Largest accepted request body, in bytes. */
 export const MAX_BODY_BYTES = 10 * 1024;
@@ -16,14 +15,10 @@ export class HttpError extends Error {
   }
 }
 
-function corsHeaders(): Record<string, string> {
-  return { 'Access-Control-Allow-Origin': env.allowedOrigin() };
-}
-
 /**
  * Every response carries user data (todos, or errors that may echo a request), so none of
  * them may be stored by a shared or browser cache. nosniff stops a browser from reinterpreting
- * the JSON body as markup.
+ * the JSON body as markup. CORS is not set here: the API is same-origin behind CloudFront.
  */
 function securityHeaders(): Record<string, string> {
   return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -32,13 +27,13 @@ function securityHeaders(): Record<string, string> {
 export function json(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(), ...securityHeaders() },
+    headers: { 'Content-Type': 'application/json', ...securityHeaders() },
     body: JSON.stringify(body),
   };
 }
 
 export function noContent(): APIGatewayProxyResult {
-  return { statusCode: 204, headers: { ...corsHeaders(), ...securityHeaders() }, body: '' };
+  return { statusCode: 204, headers: securityHeaders(), body: '' };
 }
 
 export function errorResponse(statusCode: number, message: string): APIGatewayProxyResult {

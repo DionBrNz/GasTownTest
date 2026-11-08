@@ -3,5 +3,5 @@
   "userPoolId": "us-east-1_EXAMPLE12",
   "clientId": "exampleclientid1234567890",
   "cognitoDomain": "todo-dev-example.auth.us-east-1.amazoncognito.com",
-  "apiUrl": "https://abc123defg.execute-api.us-east-1.amazonaws.com/prod/"
+  "apiUrl": "https://d111111abcdef8.cloudfront.net"
 }

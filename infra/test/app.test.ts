@@ -63,17 +63,17 @@ describe('app wiring', () => {
     );
   });
 
-  test('deploy order: WebHosting -> Auth -> Api -> WebDeployment, Data before Api', () => {
+  test('deploy order: Auth and Data first, then Api, WebHosting, WebDeployment', () => {
     const { todo } = synthApp();
-    expect(todo.webHosting.dependencies).toEqual([]);
+    expect(todo.auth.dependencies).toEqual([]);
     expect(todo.data.dependencies).toEqual([]);
-    expect(todo.auth.dependencies).toEqual([todo.webHosting]);
-    expect(todo.api.dependencies).toEqual(
-      expect.arrayContaining([todo.webHosting, todo.auth, todo.data]),
-    );
+    expect(todo.api.dependencies).toEqual(expect.arrayContaining([todo.auth, todo.data]));
+    expect(todo.webHosting.dependencies).toEqual(expect.arrayContaining([todo.api]));
     expect(todo.webDeployment.dependencies).toEqual(
-      expect.arrayContaining([todo.webHosting, todo.auth, todo.api]),
+      expect.arrayContaining([todo.webHosting, todo.auth]),
     );
+    // The API must not depend on WebHosting: that would make the CSP and CloudFront cyclic.
+    expect(todo.api.dependencies).not.toContain(todo.webHosting);
   });
 
   test.each([

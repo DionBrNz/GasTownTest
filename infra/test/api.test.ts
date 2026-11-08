@@ -44,26 +44,21 @@ describe('API stack', () => {
     const methods = Object.values(template.findResources('AWS::ApiGateway::Method'))
       .map((m) => (m as { Properties: { HttpMethod: string } }).Properties.HttpMethod)
       .sort();
-    // OPTIONS is the CORS preflight on each resource (root, /todos, /todos/{id}). It is
-    // unauthenticated by design, because browsers send preflights without credentials.
-    expect(methods).toEqual(['DELETE', 'GET', 'OPTIONS', 'OPTIONS', 'OPTIONS', 'PATCH', 'POST']);
+    // No OPTIONS: there is no CORS, because the SPA calls /todos on the same CloudFront origin.
+    expect(methods).toEqual(['DELETE', 'GET', 'PATCH', 'POST']);
   });
 
   test('every non-preflight method uses the Cognito authorizer with the todo/api scope', () => {
     const methods = Object.values(template.findResources('AWS::ApiGateway::Method')).map(
       (m) => (m as { Properties: Record<string, unknown> }).Properties,
     );
-    const secured = methods.filter((m) => m['HttpMethod'] !== 'OPTIONS');
-    expect(secured).toHaveLength(4);
-    for (const method of secured) {
+    expect(methods).toHaveLength(4);
+    for (const method of methods) {
       expect(method).toMatchObject({
         AuthorizationType: 'COGNITO_USER_POOLS',
         AuthorizationScopes: ['todo/api'],
       });
       expect(JSON.stringify(method['AuthorizerId'])).toContain('CognitoAuthorizer');
-    }
-    for (const method of methods.filter((m) => m['HttpMethod'] === 'OPTIONS')) {
-      expect(method['AuthorizationType']).toBe('NONE');
     }
   });
 
@@ -105,22 +100,12 @@ describe('API stack', () => {
     });
   });
 
-  test('CORS on the gateway allows only the CloudFront origin and the expected methods', () => {
-    const responses = Object.values(template.findResources('AWS::ApiGateway::GatewayResponse'));
-    expect(responses).toHaveLength(2);
-    for (const response of responses) {
-      const headers = (response as { Properties: { ResponseParameters: Record<string, string> } })
-        .Properties.ResponseParameters;
-      expect(headers['gatewayresponse.header.Access-Control-Allow-Origin']).toBe(
-        "'https://example.invalid'",
-      );
-      expect(headers['gatewayresponse.header.Access-Control-Allow-Methods']).toBe(
-        "'GET,POST,PATCH,DELETE,OPTIONS'",
-      );
-    }
+  test('no CORS anywhere in the API stack: the SPA is same-origin through CloudFront', () => {
+    template.resourceCountIs('AWS::ApiGateway::GatewayResponse', 0);
+    expect(JSON.stringify(template.toJSON())).not.toContain('Access-Control-Allow-Origin');
   });
 
-  test('each route Lambda: Node 22, arm64, X-Ray active, 30-day logs, env limited to TABLE_NAME and ALLOWED_ORIGIN', () => {
+  test('each route Lambda: Node 22, arm64, X-Ray active, 30-day logs, env limited to TABLE_NAME', () => {
     const functions = Object.values(template.findResources('AWS::Lambda::Function')).map(
       (f) => (f as { Properties: Record<string, unknown> }).Properties,
     );
@@ -133,8 +118,7 @@ describe('API stack', () => {
         TracingConfig: { Mode: 'Active' },
       });
       const variables = (fn['Environment'] as { Variables: Record<string, unknown> }).Variables;
-      expect(Object.keys(variables).sort()).toEqual(['ALLOWED_ORIGIN', 'TABLE_NAME']);
-      expect(variables['ALLOWED_ORIGIN']).toBe('https://example.invalid');
+      expect(Object.keys(variables).sort()).toEqual(['TABLE_NAME']);
       expect(fn).not.toHaveProperty('ReservedConcurrentExecutions');
     }
 
@@ -191,7 +175,13 @@ describe('API stack', () => {
         }),
         Match.objectLike({
           Action: { Block: {} },
-          Statement: { RateBasedStatement: { AggregateKeyType: 'IP', Limit: 2000 } },
+          Statement: {
+            RateBasedStatement: {
+              AggregateKeyType: 'FORWARDED_IP',
+              Limit: 2000,
+              ForwardedIPConfig: { HeaderName: 'X-Forwarded-For', FallbackBehavior: 'MATCH' },
+            },
+          },
         }),
       ]),
     });
