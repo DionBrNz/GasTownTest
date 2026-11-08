@@ -60,6 +60,16 @@ describe('authorization and CORS', () => {
     const res = await listHandler(makeEvent(), context);
     expect(res.headers?.['Access-Control-Allow-Origin']).toBe(ALLOWED_ORIGIN);
   });
+
+  test('responses are never cached and are not sniffed, including errors', async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    const ok = await listHandler(makeEvent(), context);
+    const denied = await listHandler(makeEvent({ claims: false }), context);
+    for (const res of [ok, denied]) {
+      expect(res.headers?.['Cache-Control']).toBe('no-store');
+      expect(res.headers?.['X-Content-Type-Options']).toBe('nosniff');
+    }
+  });
 });
 
 describe('GET /todos (list)', () => {

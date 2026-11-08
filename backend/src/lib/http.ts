@@ -20,16 +20,25 @@ function corsHeaders(): Record<string, string> {
   return { 'Access-Control-Allow-Origin': env.allowedOrigin() };
 }
 
+/**
+ * Every response carries user data (todos, or errors that may echo a request), so none of
+ * them may be stored by a shared or browser cache. nosniff stops a browser from reinterpreting
+ * the JSON body as markup.
+ */
+function securityHeaders(): Record<string, string> {
+  return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+}
+
 export function json(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(), ...securityHeaders() },
     body: JSON.stringify(body),
   };
 }
 
 export function noContent(): APIGatewayProxyResult {
-  return { statusCode: 204, headers: corsHeaders(), body: '' };
+  return { statusCode: 204, headers: { ...corsHeaders(), ...securityHeaders() }, body: '' };
 }
 
 export function errorResponse(statusCode: number, message: string): APIGatewayProxyResult {
