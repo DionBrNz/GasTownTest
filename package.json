@@ -16,8 +16,10 @@
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
+    "pretest": "npm run build -w frontend",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
+    "presynth": "npm run build -w frontend",
     "synth": "npm run synth --workspace infra --"
   },
   "devDependencies": {
